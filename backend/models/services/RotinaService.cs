@@ -1,6 +1,3 @@
-using System.Net;
-using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using BuildXP.API.Models.Dtos;
@@ -9,43 +6,28 @@ namespace BuildXP.API.Services;
 
 public class RotinaService
 {
-    private const string GroqChatCompletionsUrl = "https://api.groq.com/openai/v1/chat/completions";
-
-    private static readonly string[] GroqModelos =
-    [
-        "openai/gpt-oss-20b",
-        "openai/gpt-oss-120b",
-        "qwen/qwen3.6-27b",
-        "llama-3.3-70b-versatile",
-    ];
-
     private static readonly JsonSerializerOptions JsonOpcoes = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly GroqChatClient _groq;
     private readonly ILogger<RotinaService> _logger;
 
-    public RotinaService(IHttpClientFactory httpClientFactory, ILogger<RotinaService> logger)
+    public RotinaService(GroqChatClient groq, ILogger<RotinaService> logger)
     {
-        _httpClientFactory = httpClientFactory;
+        _groq = groq;
         _logger = logger;
     }
 
-    public async Task<RotinaRespostaDto> AjustarRotinaAsync(RotinaRequisicaoDto requisicao)
+    public async Task<RotinaRespostaDto> AjustarRotinaAsync(
+        RotinaRequisicaoDto requisicao,
+        CancellationToken ct = default)
     {
         var tarefas = requisicao?.TarefasAtuais ?? [];
         var energia = NormalizarEnergia(requisicao?.NivelEnergia);
         var horas = Math.Max(0, requisicao?.HorasDisponiveis ?? 0);
-
-        var apiKey = Environment.GetEnvironmentVariable("GROQ_API_KEY");
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            throw new InvalidOperationException(
-                "A chave da API Groq não está configurada. Defina a variável de ambiente GROQ_API_KEY.");
-        }
 
         var payloadUsuario = JsonSerializer.Serialize(
             new
@@ -56,14 +38,11 @@ public class RotinaService
             },
             JsonOpcoes);
 
-        var mensagens = new object[]
+        var mensagens = new List<object>
         {
             new { role = "system", content = MontarSystemPrompt() },
             new { role = "user", content = payloadUsuario },
         };
-
-        var client = _httpClientFactory.CreateClient();
-        client.Timeout = TimeSpan.FromSeconds(45);
 
         _logger.LogInformation(
             "Ajustando rotina via Groq. Energia={Energia} Horas={Horas} Tarefas={Tarefas}",
@@ -71,35 +50,20 @@ public class RotinaService
             horas,
             tarefas.Count);
 
-        Exception? ultimoErro = null;
-        foreach (var modelo in GroqModelos)
+        var texto = await _groq.CompletarAsync(
+            mensagens,
+            temperature: 0.3,
+            maxTokens: 2048,
+            ct,
+            aceitar: t => ExtrairResposta(t, tarefas) is not null);
+        var resposta = ExtrairResposta(texto, tarefas);
+        if (resposta is null)
         {
-            try
-            {
-                var texto = await TentarModeloAsync(client, apiKey.Trim(), modelo, mensagens);
-                var resposta = ExtrairResposta(texto, tarefas);
-                if (resposta is not null)
-                {
-                    _logger.LogInformation("Rotina ajustada com o modelo {Modelo}", modelo);
-                    return resposta;
-                }
-
-                _logger.LogWarning("Groq modelo {Modelo} não devolveu JSON de rotina válido. Tentando o próximo.", modelo);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                ultimoErro = ex;
-                _logger.LogWarning(ex, "Groq modelo {Modelo} falhou na rotina. Tentando o próximo.", modelo);
-            }
+            throw new InvalidOperationException(
+                "Nenhum modelo da Groq conseguiu ajustar a rotina agora.");
         }
 
-        throw new InvalidOperationException(
-            "Nenhum modelo da Groq conseguiu ajustar a rotina agora.",
-            ultimoErro);
+        return resposta;
     }
 
     private static string MontarSystemPrompt() =>
@@ -136,49 +100,6 @@ public class RotinaService
           "mensagemAgente": "Explique em 2 a 4 frases o plano de estudos com base na energia e no tempo livre."
         }
         """;
-
-    private async Task<string?> TentarModeloAsync(
-        HttpClient client,
-        string apiKey,
-        string modelo,
-        object[] mensagens)
-    {
-        var payload = new
-        {
-            model = modelo,
-            temperature = 0.3,
-            max_tokens = 2048,
-            messages = mensagens,
-        };
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, GroqChatCompletionsUrl);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        request.Content = new StringContent(
-            JsonSerializer.Serialize(payload, JsonOpcoes),
-            Encoding.UTF8,
-            "application/json");
-
-        using var response = await client.SendAsync(request);
-        var corpo = await response.Content.ReadAsStringAsync();
-
-        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-        {
-            _logger.LogError("Groq recusou a chave da API na rotina (status {Status}).", (int)response.StatusCode);
-            throw new UnauthorizedAccessException("A chave da API Groq foi recusada.");
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning(
-                "Groq modelo {Modelo} retornou {Status} na rotina. Corpo={Corpo}",
-                modelo,
-                (int)response.StatusCode,
-                Recortar(corpo));
-            return null;
-        }
-
-        return ExtrairTextoDaResposta(corpo);
-    }
 
     private static RotinaRespostaDto? ExtrairResposta(string? texto, List<TarefaDto> originais)
     {
@@ -226,22 +147,6 @@ public class RotinaService
         return bruto[inicio..(fim + 1)];
     }
 
-    private static string ExtrairTextoDaResposta(string json)
-    {
-        using var doc = JsonDocument.Parse(json);
-        if (!doc.RootElement.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
-            return string.Empty;
-
-        var message = choices[0].GetProperty("message");
-        if (message.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
-            return content.GetString() ?? string.Empty;
-
-        if (message.TryGetProperty("reasoning", out var reasoning) && reasoning.ValueKind == JsonValueKind.String)
-            return reasoning.GetString() ?? string.Empty;
-
-        return string.Empty;
-    }
-
     private static string NormalizarEnergia(string? bruto)
     {
         var e = (bruto ?? string.Empty).Trim().ToLowerInvariant();
@@ -263,7 +168,4 @@ public class RotinaService
         Concluida = origem.Concluida,
         Flexivel = origem.Flexivel,
     };
-
-    private static string Recortar(string texto) =>
-        texto.Length <= 120 ? texto : texto[..117] + "…";
 }

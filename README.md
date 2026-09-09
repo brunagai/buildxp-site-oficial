@@ -76,7 +76,7 @@ Painel protegido para admin e colaboradores:
 | ORM | Entity Framework Core |
 | Banco de dados | **PostgreSQL** |
 | Autenticação | JWT (dashboard) |
-| Agentes (chat e rotina) | Groq (chave em `GROQ_API_KEY` ou `GroqApiKey`) |
+| Agentes (chat, rotina e simulador) | Groq (chave em `GROQ_API_KEY` ou User Secrets `GroqApiKey`) |
 | Frontend | HTML, CSS modular, JavaScript (sem framework) |
 | API | REST + Swagger (desenvolvimento) |
 | Hospedagem estática | `wwwroot/` servido pelo próprio ASP.NET |
@@ -141,7 +141,7 @@ buildxp-site-oficial/
 
 Documentação interativa: **`/swagger`** (ambiente de desenvolvimento).
 
-Chat e rotina usam a Groq. Sem `GROQ_API_KEY` (variável de ambiente) ou `GroqApiKey` no `appsettings`, esses endpoints não respondem.
+Chat, rotina e simulador usam a Groq. Sem `GROQ_API_KEY` (variável de ambiente) ou `GroqApiKey` em User Secrets, esses endpoints não respondem. Senhas e chaves **não** vão no `appsettings.json` versionado.
 
 ---
 
@@ -151,8 +151,8 @@ Chat e rotina usam a Groq. Sem `GROQ_API_KEY` (variável de ambiente) ou `GroqAp
 
 - [.NET SDK 10](https://dotnet.microsoft.com/download)
 - [PostgreSQL](https://www.postgresql.org/) em execução
-- Connection string configurada
-- Chave Groq (opcional, só para o chat AJUDA e o plano de estudos)
+- Segredos configurados (User Secrets localmente, variáveis de ambiente em produção)
+- Chave Groq (opcional, só para chat, rotina e simulador)
 
 ### Passos
 
@@ -163,17 +163,17 @@ git clone https://github.com/brunagai/buildxp-site-oficial.git
 cd buildxp-site-oficial/backend/models
 ```
 
-2. Configure `appsettings.json` (ou `appsettings.Development.json`):
+2. Configure os segredos **fora** do git. Em desenvolvimento, User Secrets:
 
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5432;Database=buildxp;Username=postgres;Password=SUA_SENHA"
-  }
-}
+```bash
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5432;Database=buildxp;Username=postgres;Password=SUA_SENHA"
+dotnet user-secrets set "Jwt:Chave" "uma-chave-com-pelo-menos-32-caracteres"
+dotnet user-secrets set "Email:Senha" "palavra-passe-de-aplicacao"
+dotnet user-secrets set "Admin:Senha" "senha-do-admin"
+dotnet user-secrets set "GroqApiKey" "gsk_..."
 ```
 
-Para o chat e a rotina, defina a variável de ambiente `GROQ_API_KEY` (não commite a chave).
+Em produção, use variáveis de ambiente (`ConnectionStrings__DefaultConnection`, `Jwt__Chave`, `Email__Senha`, `Admin__Senha`, `GROQ_API_KEY`). Não commite `appsettings.Development.json`.
 
 3. Aplique as migrations e suba a API:
 

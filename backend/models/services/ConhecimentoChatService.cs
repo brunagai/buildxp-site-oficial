@@ -1,47 +1,25 @@
-using System.Net;
-using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
 using BuildXP.API.Models.Dtos;
 
 namespace BuildXP.API.Services;
 
 public class ConhecimentoChatService
 {
-    private const string GroqChatCompletionsUrl = "https://api.groq.com/openai/v1/chat/completions";
     private const int MaxHistorico = 8;
     private const int MaxMensagem = 1500;
     private const int MaxConteudoCard = 6000;
 
-    private static readonly string[] GroqModelos =
-    [
-        "openai/gpt-oss-20b",
-        "openai/gpt-oss-120b",
-        "qwen/qwen3.6-27b",
-        "llama-3.3-70b-versatile",
-    ];
-
-    private static readonly JsonSerializerOptions JsonOpcoes = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true,
-    };
-
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IConfiguration _config;
+    private readonly GroqChatClient _groq;
     private readonly ILogger<ConhecimentoChatService> _logger;
 
-    public ConhecimentoChatService(
-        IHttpClientFactory httpClientFactory,
-        IConfiguration config,
-        ILogger<ConhecimentoChatService> logger)
+    public ConhecimentoChatService(GroqChatClient groq, ILogger<ConhecimentoChatService> logger)
     {
-        _httpClientFactory = httpClientFactory;
-        _config = config;
+        _groq = groq;
         _logger = logger;
     }
 
-    public async Task<ConhecimentoChatRespostaDto> ResponderAsync(ConhecimentoChatRequisicaoDto requisicao)
+    public async Task<ConhecimentoChatRespostaDto> ResponderAsync(
+        ConhecimentoChatRequisicaoDto requisicao,
+        CancellationToken ct = default)
     {
         var mensagem = RecortarLimite((requisicao?.MensagemUsuario ?? string.Empty).Trim(), MaxMensagem);
         var tema = (requisicao?.TemaOuCardAtual ?? string.Empty).Trim();
@@ -57,65 +35,19 @@ public class ConhecimentoChatService
         }
 
         var conteudoCard = RecortarLimite((requisicao?.ConteudoCard ?? string.Empty).Trim(), MaxConteudoCard);
-        var texto = await ConsultarGroqAsync(tema, conteudoCard, mensagem, requisicao?.Historico);
-        return new ConhecimentoChatRespostaDto
-        {
-            RespostaAgente = texto,
-        };
-    }
-
-    private async Task<string> ConsultarGroqAsync(
-        string tema,
-        string conteudoCard,
-        string mensagemUsuario,
-        List<ConhecimentoChatMensagemDto>? historico)
-    {
-        var apiKey = ObterChaveApi();
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            throw new InvalidOperationException(
-                "A chave da API Groq não está configurada. Defina GROQ_API_KEY ou GroqApiKey.");
-        }
-
-        var mensagens = MontarMensagensGroq(tema, conteudoCard, mensagemUsuario, historico);
-        var client = _httpClientFactory.CreateClient();
-        client.Timeout = TimeSpan.FromSeconds(45);
+        var mensagens = MontarMensagensGroq(tema, conteudoCard, mensagem, requisicao?.Historico);
 
         _logger.LogInformation(
             "Consultando Groq. Tema={Tema} Mensagem={Mensagem} Historico={Historico}",
             tema,
-            Recortar(mensagemUsuario),
+            Recortar(mensagem),
             mensagens.Count - 2);
 
-        Exception? ultimoErro = null;
-
-        foreach (var modelo in GroqModelos)
+        var texto = await _groq.CompletarAsync(mensagens, temperature: 0.4, maxTokens: 1024, ct);
+        return new ConhecimentoChatRespostaDto
         {
-            try
-            {
-                var texto = await TentarModeloAsync(client, apiKey, modelo, mensagens);
-                if (!string.IsNullOrWhiteSpace(texto))
-                {
-                    _logger.LogInformation("Groq respondeu com o modelo {Modelo}", modelo);
-                    return texto.Trim();
-                }
-
-                _logger.LogWarning("Groq modelo {Modelo} devolveu texto vazio. Tentando o próximo.", modelo);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                ultimoErro = ex;
-                _logger.LogWarning(ex, "Groq modelo {Modelo} falhou. Tentando o próximo.", modelo);
-            }
-        }
-
-        throw new InvalidOperationException(
-            "Nenhum modelo da Groq conseguiu gerar a resposta agora.",
-            ultimoErro);
+            RespostaAgente = texto,
+        };
     }
 
     private static List<object> MontarMensagensGroq(
@@ -181,121 +113,6 @@ public class ConhecimentoChatService
             limpo = limpo.Skip(limpo.Count - MaxHistorico).ToList();
 
         return limpo;
-    }
-
-    private async Task<string?> TentarModeloAsync(
-        HttpClient client,
-        string apiKey,
-        string modelo,
-        List<object> mensagens)
-    {
-        var payload = new
-        {
-            model = modelo,
-            temperature = 0.4,
-            max_tokens = 1024,
-            messages = mensagens,
-        };
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, GroqChatCompletionsUrl);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        request.Content = new StringContent(
-            JsonSerializer.Serialize(payload, JsonOpcoes),
-            Encoding.UTF8,
-            "application/json");
-
-        using var response = await client.SendAsync(request);
-        var corpo = await response.Content.ReadAsStringAsync();
-
-        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-        {
-            _logger.LogError("Groq recusou a chave da API (status {Status}).", (int)response.StatusCode);
-            throw new UnauthorizedAccessException("A chave da API Groq foi recusada.");
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning(
-                "Groq modelo {Modelo} retornou {Status}. Corpo={Corpo}",
-                modelo,
-                (int)response.StatusCode,
-                Recortar(corpo));
-            return null;
-        }
-
-        return ExtrairTextoDaResposta(corpo);
-    }
-
-    private string? ObterChaveApi()
-    {
-        var env = Environment.GetEnvironmentVariable("GROQ_API_KEY");
-        if (!string.IsNullOrWhiteSpace(env))
-            return env.Trim();
-
-        var config = _config["GroqApiKey"];
-        if (!string.IsNullOrWhiteSpace(config))
-            return config.Trim();
-
-        return null;
-    }
-
-    private static string ExtrairTextoDaResposta(string json)
-    {
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-
-        if (!root.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
-            return string.Empty;
-
-        var first = choices[0];
-        if (!first.TryGetProperty("message", out var message))
-            return string.Empty;
-
-        if (message.TryGetProperty("content", out var content))
-        {
-            var texto = ExtrairConteudo(content);
-            if (!string.IsNullOrWhiteSpace(texto))
-                return texto;
-        }
-
-        if (message.TryGetProperty("reasoning", out var reasoning))
-        {
-            var texto = ExtrairConteudo(reasoning);
-            if (!string.IsNullOrWhiteSpace(texto))
-                return texto;
-        }
-
-        return string.Empty;
-    }
-
-    private static string ExtrairConteudo(JsonElement content)
-    {
-        if (content.ValueKind == JsonValueKind.String)
-            return content.GetString() ?? string.Empty;
-
-        if (content.ValueKind == JsonValueKind.Array)
-        {
-            var partes = new List<string>();
-            foreach (var item in content.EnumerateArray())
-            {
-                if (item.ValueKind == JsonValueKind.String)
-                {
-                    partes.Add(item.GetString() ?? string.Empty);
-                    continue;
-                }
-
-                if (item.ValueKind == JsonValueKind.Object
-                    && item.TryGetProperty("text", out var text)
-                    && text.ValueKind == JsonValueKind.String)
-                {
-                    partes.Add(text.GetString() ?? string.Empty);
-                }
-            }
-
-            return string.Join(string.Empty, partes);
-        }
-
-        return string.Empty;
     }
 
     private static string RecortarLimite(string texto, int max) =>

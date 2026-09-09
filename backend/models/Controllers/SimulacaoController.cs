@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using BuildXP.API.Models.Dtos;
 using BuildXP.API.Services;
 
@@ -8,6 +9,8 @@ namespace BuildXP.API.Controllers;
 [Route("api/simulacao")]
 public class SimulacaoController : ControllerBase
 {
+    private const int MaxHistoricoFeedback = 32;
+
     private readonly SimulacaoService _service;
     private readonly ILogger<SimulacaoController> _logger;
 
@@ -18,15 +21,22 @@ public class SimulacaoController : ControllerBase
     }
 
     [HttpPost("turno")]
-    public async Task<IActionResult> ProcessarTurno([FromBody] SimulacaoRequisicaoDto? requisicao)
+    [EnableRateLimiting("ia-anonima")]
+    public async Task<IActionResult> ProcessarTurno(
+        [FromBody] SimulacaoRequisicaoDto? requisicao,
+        CancellationToken ct)
     {
         if (requisicao is null)
             return BadRequest(new { mensagem = "Informe a persona, o cenário e a mensagem do usuário." });
 
         try
         {
-            var resposta = await _service.ProcessarTurnoAsync(requisicao);
+            var resposta = await _service.ProcessarTurnoAsync(requisicao, ct);
             return Ok(resposta);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -48,15 +58,24 @@ public class SimulacaoController : ControllerBase
     }
 
     [HttpPost("feedback")]
-    public async Task<IActionResult> GerarFeedback([FromBody] List<MensagemHistoricoDto>? historico)
+    [EnableRateLimiting("ia-anonima")]
+    public async Task<IActionResult> GerarFeedback(
+        [FromBody] List<MensagemHistoricoDto>? historico,
+        CancellationToken ct)
     {
         if (historico is null)
             return BadRequest(new { mensagem = "Informe o histórico de mensagens da simulação." });
+        if (historico.Count > MaxHistoricoFeedback)
+            return BadRequest(new { mensagem = $"O histórico aceita no máximo {MaxHistoricoFeedback} mensagens." });
 
         try
         {
-            var feedback = await _service.GerarFeedbackAsync(historico);
+            var feedback = await _service.GerarFeedbackAsync(historico, ct);
             return Ok(feedback);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (UnauthorizedAccessException ex)
         {

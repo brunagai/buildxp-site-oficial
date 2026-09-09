@@ -1,6 +1,3 @@
-using System.Net;
-using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using BuildXP.API.Models.Dtos;
@@ -9,18 +6,9 @@ namespace BuildXP.API.Services;
 
 public class SimulacaoService
 {
-    private const string GroqChatCompletionsUrl = "https://api.groq.com/openai/v1/chat/completions";
     private const int MaxHistorico = 16;
     private const int MaxMensagem = 1500;
     private const int MaxCenario = 800;
-
-    private static readonly string[] GroqModelos =
-    [
-        "openai/gpt-oss-20b",
-        "openai/gpt-oss-120b",
-        "qwen/qwen3.6-27b",
-        "llama-3.3-70b-versatile",
-    ];
 
     private static readonly JsonSerializerOptions JsonOpcoes = new()
     {
@@ -28,75 +16,50 @@ public class SimulacaoService
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IConfiguration _config;
+    private readonly GroqChatClient _groq;
     private readonly ILogger<SimulacaoService> _logger;
 
-    public SimulacaoService(
-        IHttpClientFactory httpClientFactory,
-        IConfiguration config,
-        ILogger<SimulacaoService> logger)
+    public SimulacaoService(GroqChatClient groq, ILogger<SimulacaoService> logger)
     {
-        _httpClientFactory = httpClientFactory;
-        _config = config;
+        _groq = groq;
         _logger = logger;
     }
 
-    public async Task<SimulacaoRespostaDto> ProcessarTurnoAsync(SimulacaoRequisicaoDto requisicao)
+    public async Task<SimulacaoRespostaDto> ProcessarTurnoAsync(
+        SimulacaoRequisicaoDto requisicao,
+        CancellationToken ct = default)
     {
         var persona = NormalizarPersona(requisicao?.Persona);
         var cenario = RecortarLimite((requisicao?.Cenario ?? string.Empty).Trim(), MaxCenario);
         var mensagemUsuario = RecortarLimite((requisicao?.MensagemUsuario ?? string.Empty).Trim(), MaxMensagem);
         var historico = requisicao?.HistoricoMensagens ?? [];
 
-        var apiKey = ObterChaveApi();
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            throw new InvalidOperationException(
-                "A chave da API Groq não está configurada. Defina GROQ_API_KEY ou GroqApiKey.");
-        }
-
         var mensagens = MontarMensagensTurno(persona, cenario, historico, mensagemUsuario);
-        var client = _httpClientFactory.CreateClient();
-        client.Timeout = TimeSpan.FromSeconds(45);
 
         _logger.LogInformation(
             "Processando turno de simulação. Persona={Persona} Historico={Historico}",
             persona,
             historico.Count);
 
-        Exception? ultimoErro = null;
-        foreach (var modelo in GroqModelos)
+        var texto = await _groq.CompletarAsync(
+            mensagens,
+            temperature: 0.6,
+            maxTokens: 1024,
+            ct,
+            aceitar: t => ExtrairRespostaTurno(t) is not null);
+        var resposta = ExtrairRespostaTurno(texto);
+        if (resposta is null)
         {
-            try
-            {
-                var texto = await TentarModeloAsync(client, apiKey, modelo, mensagens, temperature: 0.6, maxTokens: 1024);
-                var resposta = ExtrairRespostaTurno(texto);
-                if (resposta is not null)
-                {
-                    _logger.LogInformation("Turno de simulação gerado com o modelo {Modelo}", modelo);
-                    return resposta;
-                }
-
-                _logger.LogWarning("Groq modelo {Modelo} não devolveu JSON de turno válido. Tentando o próximo.", modelo);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                ultimoErro = ex;
-                _logger.LogWarning(ex, "Groq modelo {Modelo} falhou no turno da simulação. Tentando o próximo.", modelo);
-            }
+            throw new InvalidOperationException(
+                "Nenhum modelo da Groq conseguiu processar o turno da simulação agora.");
         }
 
-        throw new InvalidOperationException(
-            "Nenhum modelo da Groq conseguiu processar o turno da simulação agora.",
-            ultimoErro);
+        return resposta;
     }
 
-    public async Task<FeedbackSimulacaoDto> GerarFeedbackAsync(List<MensagemHistoricoDto> historico)
+    public async Task<FeedbackSimulacaoDto> GerarFeedbackAsync(
+        List<MensagemHistoricoDto> historico,
+        CancellationToken ct = default)
     {
         var conversa = historico ?? [];
         if (conversa.Count == 0)
@@ -108,13 +71,6 @@ public class SimulacaoService
                 PontosFortes = [],
                 PontosMelhoria = ["Participe de pelo menos um turno da simulação para receber um relatório."],
             };
-        }
-
-        var apiKey = ObterChaveApi();
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            throw new InvalidOperationException(
-                "A chave da API Groq não está configurada. Defina GROQ_API_KEY ou GroqApiKey.");
         }
 
         var payloadHistorico = JsonSerializer.Serialize(
@@ -131,40 +87,22 @@ public class SimulacaoService
             new { role = "user", content = payloadHistorico },
         };
 
-        var client = _httpClientFactory.CreateClient();
-        client.Timeout = TimeSpan.FromSeconds(45);
-
         _logger.LogInformation("Gerando feedback da simulação. Mensagens={Mensagens}", conversa.Count);
 
-        Exception? ultimoErro = null;
-        foreach (var modelo in GroqModelos)
+        var texto = await _groq.CompletarAsync(
+            mensagens,
+            temperature: 0.3,
+            maxTokens: 1536,
+            ct,
+            aceitar: t => ExtrairFeedback(t) is not null);
+        var feedback = ExtrairFeedback(texto);
+        if (feedback is null)
         {
-            try
-            {
-                var texto = await TentarModeloAsync(client, apiKey, modelo, mensagens, temperature: 0.3, maxTokens: 1536);
-                var feedback = ExtrairFeedback(texto);
-                if (feedback is not null)
-                {
-                    _logger.LogInformation("Feedback da simulação gerado com o modelo {Modelo}", modelo);
-                    return feedback;
-                }
-
-                _logger.LogWarning("Groq modelo {Modelo} não devolveu JSON de feedback válido. Tentando o próximo.", modelo);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                ultimoErro = ex;
-                _logger.LogWarning(ex, "Groq modelo {Modelo} falhou no feedback da simulação. Tentando o próximo.", modelo);
-            }
+            throw new InvalidOperationException(
+                "Nenhum modelo da Groq conseguiu gerar o feedback da simulação agora.");
         }
 
-        throw new InvalidOperationException(
-            "Nenhum modelo da Groq conseguiu gerar o feedback da simulação agora.",
-            ultimoErro);
+        return feedback;
     }
 
     private static List<object> MontarMensagensTurno(
@@ -325,51 +263,6 @@ public class SimulacaoService
         };
     }
 
-    private async Task<string?> TentarModeloAsync(
-        HttpClient client,
-        string apiKey,
-        string modelo,
-        List<object> mensagens,
-        double temperature,
-        int maxTokens)
-    {
-        var payload = new
-        {
-            model = modelo,
-            temperature,
-            max_tokens = maxTokens,
-            messages = mensagens,
-        };
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, GroqChatCompletionsUrl);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        request.Content = new StringContent(
-            JsonSerializer.Serialize(payload, JsonOpcoes),
-            Encoding.UTF8,
-            "application/json");
-
-        using var response = await client.SendAsync(request);
-        var corpo = await response.Content.ReadAsStringAsync();
-
-        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-        {
-            _logger.LogError("Groq recusou a chave da API na simulação (status {Status}).", (int)response.StatusCode);
-            throw new UnauthorizedAccessException("A chave da API Groq foi recusada.");
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogWarning(
-                "Groq modelo {Modelo} retornou {Status} na simulação. Corpo={Corpo}",
-                modelo,
-                (int)response.StatusCode,
-                Recortar(corpo));
-            return null;
-        }
-
-        return ExtrairTextoDaResposta(corpo);
-    }
-
     private static SimulacaoRespostaDto? ExtrairRespostaTurno(string? texto)
     {
         var json = ExtrairJson(texto);
@@ -435,38 +328,6 @@ public class SimulacaoService
         return bruto[inicio..(fim + 1)];
     }
 
-    private string? ObterChaveApi()
-    {
-        var env = Environment.GetEnvironmentVariable("GROQ_API_KEY");
-        if (!string.IsNullOrWhiteSpace(env))
-            return env.Trim();
-
-        var config = _config["GroqApiKey"];
-        if (!string.IsNullOrWhiteSpace(config))
-            return config.Trim();
-
-        return null;
-    }
-
-    private static string ExtrairTextoDaResposta(string json)
-    {
-        using var doc = JsonDocument.Parse(json);
-        if (!doc.RootElement.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
-            return string.Empty;
-
-        var message = choices[0].GetProperty("message");
-        if (message.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
-            return content.GetString() ?? string.Empty;
-
-        if (message.TryGetProperty("reasoning", out var reasoning) && reasoning.ValueKind == JsonValueKind.String)
-            return reasoning.GetString() ?? string.Empty;
-
-        return string.Empty;
-    }
-
     private static string RecortarLimite(string texto, int max) =>
         texto.Length <= max ? texto : texto[..max];
-
-    private static string Recortar(string texto) =>
-        texto.Length <= 120 ? texto : texto[..117] + "…";
 }

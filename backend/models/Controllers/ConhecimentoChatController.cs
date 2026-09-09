@@ -20,15 +20,21 @@ public class ConhecimentoChatController : ControllerBase
 
     [HttpPost]
     [EnableRateLimiting("conhecimento-chat")]
-    public async Task<IActionResult> Conversar([FromBody] ConhecimentoChatRequisicaoDto? requisicao)
+    public async Task<IActionResult> Conversar(
+        [FromBody] ConhecimentoChatRequisicaoDto? requisicao,
+        CancellationToken ct)
     {
         if (requisicao is null)
             return BadRequest(new { mensagem = "Informe a mensagem e o tema ou card atual." });
 
         try
         {
-            var resposta = await _service.ResponderAsync(requisicao);
+            var resposta = await _service.ResponderAsync(requisicao, ct);
             return Ok(resposta);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

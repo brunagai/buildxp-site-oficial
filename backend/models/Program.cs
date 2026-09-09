@@ -12,6 +12,19 @@ using BuildXP.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+const string jwtPlaceholderAntigo = "buildxp-chave-super-secreta-minimo-32-caracteres";
+var jwtChave = (builder.Configuration["Jwt:Chave"] ?? string.Empty).Trim();
+if (string.IsNullOrWhiteSpace(jwtChave)
+    || string.Equals(jwtChave, jwtPlaceholderAntigo, StringComparison.Ordinal))
+{
+    throw new InvalidOperationException(
+        "Jwt:Chave não está configurada. Defina User Secrets (dotnet user-secrets set \"Jwt:Chave\" \"...\") ou a variável Jwt__Chave. A chave antiga versionada não é mais aceita.");
+}
+if (Encoding.UTF8.GetByteCount(jwtChave) < 32)
+{
+    throw new InvalidOperationException("Jwt:Chave deve ter pelo menos 32 caracteres.");
+}
+
 // ── BANCO DE DADOS ───────────────────────────────────────────
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -27,7 +40,11 @@ builder.Services.AddScoped<MarkdownBuilderService>();
 builder.Services.AddScoped<ITerminalQuestaoRepository, TerminalQuestaoRepository>();
 builder.Services.AddScoped<TerminalQuestaoService>();
 builder.Services.AddScoped<TerminalMentorService>();
-builder.Services.AddHttpClient();
+builder.Services.AddHttpClient(GroqChatClient.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
+builder.Services.AddScoped<GroqChatClient>();
 builder.Services.AddScoped<ConhecimentoChatService>();
 builder.Services.AddScoped<RotinaService>();
 builder.Services.AddScoped<SimulacaoService>();
@@ -44,8 +61,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true,
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Chave"]!))
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtChave))
         };
     });
 
@@ -94,7 +110,7 @@ builder.Services.AddRateLimiter(options =>
             new { mensagem = "Muitas perguntas em pouco tempo. Espere um instante e tente de novo." },
             token);
     };
-    options.AddPolicy("feedback-publico", httpContext =>
+    static RateLimitPartition<string> ParticaoIaPorIp(HttpContext httpContext) =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "anon",
             factory: _ => new FixedWindowRateLimiterOptions
@@ -103,17 +119,11 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1),
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                 QueueLimit = 0,
-            }));
-    options.AddPolicy("conhecimento-chat", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "anon",
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 8,
-                Window = TimeSpan.FromMinutes(1),
-                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                QueueLimit = 0,
-            }));
+            });
+
+    options.AddPolicy("feedback-publico", ParticaoIaPorIp);
+    options.AddPolicy("conhecimento-chat", ParticaoIaPorIp);
+    options.AddPolicy("ia-anonima", ParticaoIaPorIp);
 });
 
 var app = builder.Build();

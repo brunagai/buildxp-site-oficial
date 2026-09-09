@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using BuildXP.API.Models.Dtos;
 using BuildXP.API.Services;
 
@@ -18,15 +19,22 @@ public class RotinaController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> AjustarRotina([FromBody] RotinaRequisicaoDto? requisicao)
+    [EnableRateLimiting("ia-anonima")]
+    public async Task<IActionResult> AjustarRotina(
+        [FromBody] RotinaRequisicaoDto? requisicao,
+        CancellationToken ct)
     {
         if (requisicao is null)
             return BadRequest(new { mensagem = "Informe os temas de estudo, o nível de energia e as horas livres." });
 
         try
         {
-            var resposta = await _service.AjustarRotinaAsync(requisicao);
+            var resposta = await _service.AjustarRotinaAsync(requisicao, ct);
             return Ok(resposta);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
