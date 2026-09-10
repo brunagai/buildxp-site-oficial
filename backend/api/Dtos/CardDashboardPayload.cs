@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace BuildXP.API.Models;
+namespace BuildXP.API.Models.Dtos;
 
 /// <summary>Corpo JSON do dashboard (snake_case) para criar/atualizar cards.</summary>
 public class CardDashboardPayload

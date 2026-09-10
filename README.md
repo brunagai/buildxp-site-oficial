@@ -96,10 +96,13 @@ buildxp-site-oficial/
 ├── buildxp-site-oficial.sln
 └── backend/
     ├── docs/                    # Padrões de dados (cards, slides, refs)
-    ├── tests/BuildXP.Tests/     # Testes sem banco (personas, DTOs)
-    └── models/                  # API + site estático
+    ├── tests/BuildXP.Tests/     # Testes sem banco (personas, DTOs, JWT, Groq mock, smoke)
+    └── api/                     # API + site estático (projeto BuildXP.API)
         ├── Controllers/         # Rotas REST
-        ├── services/            # Regras de negócio (cards, chat, rotina…)
+        ├── Services/            # Regras de negócio (cards, chat, rotina…)
+        ├── Models/              # Entidades
+        ├── Dtos/                # Contratos da API
+        ├── Data/                # EF Core (AppDbContext)
         ├── database/            # Scripts SQL auxiliares
         ├── Migrations/          # EF Core
         └── wwwroot/             # Site público + dashboard
@@ -160,9 +163,11 @@ Chat, rotina e simulador usam a Groq. Sem `GROQ_API_KEY` (variável de ambiente)
 ### Pré-requisitos
 
 - [.NET SDK 10](https://dotnet.microsoft.com/download)
-- [PostgreSQL](https://www.postgresql.org/) em execução
 - Segredos configurados (User Secrets localmente, variáveis de ambiente em produção)
 - Chave Groq (opcional, só para chat, rotina e simulador)
+- [PostgreSQL](https://www.postgresql.org/) — **só** se for usar cards, dashboard, feedback persistido ou treino de terminal
+
+Sem connection string, em desenvolvimento a API **sobe mesmo assim**: páginas estáticas, `/health`, simulador, rotina e chat. Cards e dashboard ficam indisponíveis até existir um PostgreSQL.
 
 ### Passos
 
@@ -170,27 +175,30 @@ Chat, rotina e simulador usam a Groq. Sem `GROQ_API_KEY` (variável de ambiente)
 
 ```bash
 git clone https://github.com/brunagai/buildxp-site-oficial.git
-cd buildxp-site-oficial/backend/models
+cd buildxp-site-oficial
 ```
 
-2. Configure os segredos **fora** do git. Em desenvolvimento, User Secrets:
+2. Configure os segredos **fora** do git. Em desenvolvimento, User Secrets (na pasta do projeto da API):
 
 ```bash
-dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5432;Database=buildxp;Username=postgres;Password=SUA_SENHA"
+cd backend/api
 dotnet user-secrets set "Jwt:Chave" "uma-chave-com-pelo-menos-32-caracteres"
-dotnet user-secrets set "Email:Senha" "palavra-passe-de-aplicacao"
-dotnet user-secrets set "Admin:Senha" "senha-do-admin"
 dotnet user-secrets set "GroqApiKey" "gsk_..."
+# opcional, só quando tiver PostgreSQL:
+# dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5432;Database=buildxp;Username=postgres;Password=SUA_SENHA"
+# dotnet user-secrets set "Email:Senha" "palavra-passe-de-aplicacao"
+# dotnet user-secrets set "Admin:Senha" "senha-do-admin"
+cd ../..
 ```
 
 Em produção, use variáveis de ambiente (`ConnectionStrings__DefaultConnection`, `Jwt__Chave`, `Email__Senha`, `Admin__Senha`, `GROQ_API_KEY`). Não commite `appsettings.Development.json`.
 
-3. Aplique as migrations e suba a API:
+3. Suba a API (na raiz do repositório):
 
 ```bash
 dotnet restore
 dotnet test
-dotnet run --project backend/models --launch-profile http
+dotnet run --project backend/api --launch-profile http
 ```
 
 4. Abra no navegador:
@@ -198,6 +206,7 @@ dotnet run --project backend/models --launch-profile http
 | Ambiente | URL |
 |----------|-----|
 | Site + API | http://localhost:5021 |
+| Saúde | http://localhost:5021/health |
 | Rotina | http://localhost:5021/rotina.html |
 | Simulador | http://localhost:5021/simulador.html |
 | Swagger | http://localhost:5021/swagger |

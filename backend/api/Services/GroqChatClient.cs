@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using BuildXP.API;
 
 namespace BuildXP.API.Services;
 
@@ -45,10 +46,10 @@ public class GroqChatClient
         CancellationToken ct = default,
         Func<string, bool>? aceitar = null)
     {
-        var apiKey = ObterChaveApi();
+        var apiKey = GroqChave.Obter(_config);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            throw new InvalidOperationException(
+            throw new GroqIndisponivelException(
                 "A chave da API Groq não está configurada. Defina GROQ_API_KEY ou GroqApiKey.");
         }
 
@@ -87,7 +88,7 @@ public class GroqChatClient
             }
         }
 
-        throw new InvalidOperationException(
+        throw new GroqIndisponivelException(
             "Nenhum modelo da Groq conseguiu gerar a resposta agora.",
             ultimoErro);
     }
@@ -136,19 +137,6 @@ public class GroqChatClient
         }
 
         return ExtrairTextoDaResposta(corpo);
-    }
-
-    private string? ObterChaveApi()
-    {
-        var env = Environment.GetEnvironmentVariable("GROQ_API_KEY");
-        if (!string.IsNullOrWhiteSpace(env))
-            return env.Trim();
-
-        var config = _config["GroqApiKey"];
-        if (!string.IsNullOrWhiteSpace(config))
-            return config.Trim();
-
-        return null;
     }
 
     private static string ExtrairTextoDaResposta(string json)

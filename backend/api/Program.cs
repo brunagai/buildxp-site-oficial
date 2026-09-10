@@ -6,31 +6,18 @@ using System.Threading.RateLimiting;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using BuildXP.API;
 using BuildXP.API.Data;
 using BuildXP.API.Repositories;
 using BuildXP.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+var jwtChave = JwtChave.Exigir(builder.Configuration["Jwt:Chave"]);
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
-const string jwtPlaceholderAntigo = "buildxp-chave-super-secreta-minimo-32-caracteres";
-var jwtChave = (builder.Configuration["Jwt:Chave"] ?? string.Empty).Trim();
-if (string.IsNullOrWhiteSpace(jwtChave)
-    || string.Equals(jwtChave, jwtPlaceholderAntigo, StringComparison.Ordinal))
-{
-    throw new InvalidOperationException(
-        "Jwt:Chave não está configurada. Defina User Secrets (dotnet user-secrets set \"Jwt:Chave\" \"...\") ou a variável Jwt__Chave. A chave antiga versionada não é mais aceita.");
-}
-if (Encoding.UTF8.GetByteCount(jwtChave) < 32)
-{
-    throw new InvalidOperationException("Jwt:Chave deve ter pelo menos 32 caracteres.");
-}
-
-// ── BANCO DE DADOS ───────────────────────────────────────────
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(BancoNaSubida.ParaEf(connectionString, builder.Environment.IsDevelopment())));
 
-// ── SERVICES — injeção de dependência ───────────────────────
-// registra os services para o .NET saber como criá-los
 builder.Services.AddScoped<FeedbackService>();
 builder.Services.AddScoped<CardService>();
 builder.Services.AddScoped<AuthService>();
@@ -48,8 +35,8 @@ builder.Services.AddScoped<GroqChatClient>();
 builder.Services.AddScoped<ConhecimentoChatService>();
 builder.Services.AddScoped<RotinaService>();
 builder.Services.AddScoped<SimulacaoService>();
+builder.Services.AddScoped<EmailService>();
 
-// ── JWT — autenticação ───────────────────────────────────────
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -67,10 +54,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
-// ── EMAIL ────────────────────────────────────────────────────
-builder.Services.AddScoped<EmailService>();
-
-// ── CORS — libera o frontend HTML ───────────────────────────
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -84,16 +67,15 @@ builder.Services.AddCors(options =>
                 "http://127.0.0.1:5021")
               .AllowAnyHeader()
               .AllowAnyMethod()
-              .AllowCredentials(); // ← essencial para credentials: 'include' funcionar
+              .AllowCredentials();
     });
 });
 
-// ── CONTROLLERS & SWAGGER ────────────────────────────────────
 builder.Services.AddControllers()
     .AddJsonOptions(o =>
     {
         o.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-        o.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        o.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
         o.JsonSerializerOptions.Converters.Add(
             new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: true));
     });
@@ -128,16 +110,16 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
+if (!BancoNaSubida.DevePreparar(connectionString))
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.MigrateAsync();
-    var cardService = scope.ServiceProvider.GetRequiredService<CardService>();
-    await cardService.FixDuplicateStaticIconPathsAsync();
-    await cardService.FixCheapCodesBrandingAsync();
-    await cardService.FixPublicCardLinksAsync();
-    await CardCheatCodesSync.SincronizarSeVazioAsync(db, app.Environment.WebRootPath);
+    if (!BancoNaSubida.TemConnectionString(connectionString))
+    {
+        app.Logger.LogWarning(
+            "ConnectionStrings:DefaultConnection vazia. Site estático, /health e rotas Groq sobem; cards, dashboard e terminal precisam do banco.");
+    }
 }
+
+await BancoNaSubida.PrepararAsync(app.Services, connectionString, app.Environment.WebRootPath);
 
 if (app.Environment.IsDevelopment())
 {
@@ -145,13 +127,25 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// ── ORDEM IMPORTA — middleware na sequência correta ─────────
-app.UseCors("Frontend");         // 1. libera o frontend
+app.UseCors("Frontend");
 app.UseRateLimiter();
-app.UseHttpsRedirection();       // 2. redireciona para HTTPS
-app.UseDefaultFiles();           // 3. serve index.html e outros arquivos estáticos
-app.UseStaticFiles();           // 4. serve arquivos estáticos (CSS, JS, imagens)
-app.UseAuthentication();         // 3. verifica o token JWT
-app.UseAuthorization();          // 4. verifica as permissões
-app.MapControllers();            // 5. mapeia as rotas
+app.UseHttpsRedirection();
+app.UseDefaultFiles();
+app.UseStaticFiles();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapGet("/health", (IConfiguration config, IHostEnvironment env) =>
+{
+    var temBanco = BancoNaSubida.TemConnectionString(config.GetConnectionString("DefaultConnection"));
+    return Results.Ok(new
+    {
+        status = temBanco ? "ok" : "degradado",
+        ambiente = env.EnvironmentName,
+        bancoConfigurado = temBanco,
+        groqConfigurada = GroqChave.EstaConfigurada(config),
+    });
+});
+app.MapControllers();
 app.Run();
+
+public partial class Program;

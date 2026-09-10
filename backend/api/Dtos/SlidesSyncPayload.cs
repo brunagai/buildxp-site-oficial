@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace BuildXP.API.Models;
+namespace BuildXP.API.Models.Dtos;
 
 /// <summary>Substitui todos os slides de um card (evita duplicar ao editar).</summary>
 public class SlidesSyncPayload

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using BuildXP.API.Models.Dtos;
 using BuildXP.API.Services;
 
 namespace BuildXP.API.Controllers;
@@ -18,7 +19,6 @@ public class AuthController : ControllerBase
         _logger = logger;
     }
 
-    // POST api/auth/login
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken ct)
     {
@@ -27,7 +27,6 @@ public class AuthController : ControllerBase
         return Ok(new { token = login.Token, podeGerirColaboradores = login.PodeGerirColaboradores });
     }
 
-    // POST api/auth/recuperar-senha
     [HttpPost("recuperar-senha")]
     public async Task<IActionResult> RecuperarSenha([FromBody] RecuperacaoRequest request)
     {
@@ -72,7 +71,6 @@ public class AuthController : ControllerBase
         return Ok(new { message = "Código enviado para o e-mail." });
     }
 
-    // POST api/auth/validar-codigo-recuperacao
     [HttpPost("validar-codigo-recuperacao")]
     public async Task<IActionResult> ValidarCodigoRecuperacao([FromBody] ValidarCodigoRecuperacaoRequest request)
     {
@@ -84,7 +82,6 @@ public class AuthController : ControllerBase
         return Ok(new { ok = true });
     }
 
-    // POST api/auth/redefinir-senha
     [HttpPost("redefinir-senha")]
     public async Task<IActionResult> RedefinirSenha([FromBody] RedefinicaoRequest request)
     {
@@ -99,9 +96,3 @@ public class AuthController : ControllerBase
         return Ok(new { message = "Senha redefinida com sucesso." });
     }
 }
-
-// DTOs — objetos simples para receber os dados das requisições
-public record LoginRequest(string Usuario, string Senha);
-public record RecuperacaoRequest(string Email);
-public record ValidarCodigoRecuperacaoRequest(string Email, string Codigo);
-public record RedefinicaoRequest(string Email, string Codigo, string NovaSenha);

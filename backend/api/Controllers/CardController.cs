@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using BuildXP.API.Services;
 using BuildXP.API.Models;
+using BuildXP.API.Models.Dtos;
 
 namespace BuildXP.API.Controllers;
 

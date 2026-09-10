@@ -1,8 +1,9 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using BuildXP.API.Models;
 using BuildXP.API.Services;
 
-namespace BuildXP.API.Models;
+namespace BuildXP.API.Models.Dtos;
 
 /// <summary>Formato esperado pelo dashboard e pelo JS público (snake_case).</summary>
 public class CardClientDto

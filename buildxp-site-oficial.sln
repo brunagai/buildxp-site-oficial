@@ -5,7 +5,7 @@ VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "backend", "backend", "{1AE8ACA6-933B-BF2A-3671-3E2EAC007D16}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "models", "backend\models\models.csproj", "{62E85FF7-FD58-2593-DFC5-E65FDE6D5474}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BuildXP.API", "backend\api\BuildXP.API.csproj", "{62E85FF7-FD58-2593-DFC5-E65FDE6D5474}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{F57642F3-C37C-D174-720E-6A6AAD5BEE22}"
 EndProject

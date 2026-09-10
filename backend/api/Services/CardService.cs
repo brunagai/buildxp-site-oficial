@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using BuildXP.API.Data;
 using BuildXP.API.Models;
+using BuildXP.API.Models.Dtos;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 

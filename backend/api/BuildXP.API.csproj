@@ -4,8 +4,14 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BuildXP.API</RootNamespace>
+    <AssemblyName>BuildXP.API</AssemblyName>
     <UserSecretsId>b86613ca-c8e5-46ef-ba5f-833120b787bd</UserSecretsId>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="BuildXP.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.7" />
