@@ -4,7 +4,7 @@
 <br>
 [Acesse o site oficial:](https://www.buildxpdev.com.br/)
 
-Plataforma de referência e aprendizado prático para desenvolvedores — cards de conhecimento, trilhas guiadas, cheap codes copiáveis, treino de terminal, plano de estudos e chat de ajuda no card, tudo num só lugar.
+Plataforma de referência e aprendizado prático para desenvolvedores — cards de conhecimento, trilhas guiadas, cheap codes copiáveis, treino de terminal, plano de estudos, chat de ajuda no card e simulador de entrevistas, tudo num só lugar.
 
 ---
 
@@ -22,6 +22,7 @@ A ideia é simples: **aprender no fluxo**, consultar quando esquecer um comando,
 | Lembrar um comando | Aba **Cheap Codes** com busca e botão de copiar |
 | Tirar dúvida no card | Chat **AJUDA** no `card.html`, preso ao tema atual |
 | Organizar o estudo | Página **Rotina** — plano de estudos e revisões por energia e tempo livre |
+| Treinar entrevista | Página **Simulador** — RH, tech lead/gerente ou stakeholder, com relatório no final |
 | Ver tudo disponível | Página **Cards** com grid e pesquisa por nome, trilha ou comando |
 | Praticar no terminal | Seção de **treino** no site (comandos por card) |
 | Montar um README | **README Lab** — editor Markdown com preview |
@@ -52,6 +53,10 @@ No `card.html`, o botão **AJUDA** abre um chat em português. O agente responde
 ### Plano de estudos (Rotina)
 
 A página **`rotina.html`** monta o cronograma do dia com os temas/cards do BuildXP (Git, Docker, Python, .NET, Java e os demais publicados). O aluno informa energia e tempo livre, escolhe o que quer estudar ou revisar e define tempo estimado e foco. O agente atua como tutor: energia baixa concentra em um tema ou revisão leve; energia alta encadeia conteúdos mais densos, ainda dentro das horas disponíveis.
+
+### Simulador de entrevistas e reuniões
+
+A página **`simulador.html`** é um treino público (sem login). A pessoa escolhe a persona — recrutador de RH (cultura e STAR), tech lead/gerente (arquitetura, prazo e impacto) ou stakeholder de negócios (valor sem jargão) — descreve o cenário e conversa por turnos. Ao encerrar, a API devolve nota de 0 a 10, pontos fortes e pontos de melhoria. A conversa não é gravada no banco.
 
 ### README Lab
 
@@ -91,6 +96,7 @@ buildxp-site-oficial/
 ├── buildxp-site-oficial.sln
 └── backend/
     ├── docs/                    # Padrões de dados (cards, slides, refs)
+    ├── tests/BuildXP.Tests/     # Testes sem banco (personas, DTOs)
     └── models/                  # API + site estático
         ├── Controllers/         # Rotas REST
         ├── services/            # Regras de negócio (cards, chat, rotina…)
@@ -101,6 +107,7 @@ buildxp-site-oficial/
             ├── cards.html       # Catálogo de todos os cards
             ├── card.html        # Página dinâmica por slug (+ chat AJUDA)
             ├── rotina.html      # Plano de estudos e revisões
+            ├── simulador.html   # Entrevistas e reuniões (3 personas)
             ├── readme-lab.html  # Editor Markdown
             ├── feedback.html    # Feedback público
             ├── dashboard.html   # Painel editorial
@@ -119,6 +126,7 @@ buildxp-site-oficial/
 | Catálogo | `/cards.html` | Todos os cards + pesquisa |
 | Card | `/card.html?slug={slug}` | Trilha iniciante, cheap codes e chat AJUDA |
 | Rotina | `/rotina.html` | Plano de estudos e revisões dos cards |
+| Simulador | `/simulador.html` | Entrevista/reunião com 3 personas + relatório |
 | README Lab | `/readme-lab.html` | Editor Markdown com preview |
 | Feedback | `/feedback.html` | Envio e mural de sugestões |
 | Dashboard | `/dashboard.html` | Acesso restrito (login JWT) |
@@ -133,6 +141,8 @@ buildxp-site-oficial/
 | `GET` | `/api/card/{slug}` | Card completo (slides + referências) |
 | `POST` | `/api/conhecimento/chat` | Chat de ajuda preso ao card atual |
 | `POST` | `/api/rotina` | Organizar o plano de estudos do dia |
+| `POST` | `/api/simulacao/turno` | Próxima fala da persona |
+| `POST` | `/api/simulacao/feedback` | Relatório final (nota 0–10) |
 | `GET` | `/api/feedback/aprovados` | Mural público |
 | `POST` | `/api/feedback` | Enviar feedback |
 | `POST` | `/api/auth/login` | Login dashboard |
@@ -179,7 +189,8 @@ Em produção, use variáveis de ambiente (`ConnectionStrings__DefaultConnection
 
 ```bash
 dotnet restore
-dotnet run --launch-profile http
+dotnet test
+dotnet run --project backend/models --launch-profile http
 ```
 
 4. Abra no navegador:
@@ -188,6 +199,7 @@ dotnet run --launch-profile http
 |----------|-----|
 | Site + API | http://localhost:5021 |
 | Rotina | http://localhost:5021/rotina.html |
+| Simulador | http://localhost:5021/simulador.html |
 | Swagger | http://localhost:5021/swagger |
 
 > As migrations rodam automaticamente na inicialização. Cheap codes vazios na BD são repovoados a partir de `wwwroot/data/cheat-html/` quando aplicável.

@@ -198,9 +198,7 @@ async function simuladorIniciar() {
     simuladorSetStatus('simulador-setup-status', '', '');
     simuladorSetStatus('simulador-chat-status', '', '');
     if (finalizada) {
-      simuladorEstado.encerrada = true;
-      simuladorTravarChat(true);
-      simuladorSetStatus('simulador-chat-status', 'ok', 'A persona encerrou. Veja o feedback.');
+      await simuladorAbrirRelatorioAposEncerramento();
     }
   } catch (err) {
     simuladorSetStatus(
@@ -239,8 +237,7 @@ async function simuladorEnviarFala(event) {
       pending.textContent = fala;
     }
     if (finalizada) {
-      simuladorEstado.encerrada = true;
-      simuladorSetStatus('simulador-chat-status', 'ok', 'A persona encerrou. Veja o feedback.');
+      await simuladorAbrirRelatorioAposEncerramento();
     }
   } catch (err) {
     pending?.remove();
@@ -256,21 +253,42 @@ async function simuladorEnviarFala(event) {
   }
 }
 
-async function simuladorEncerrar() {
-  if (simuladorEstado.ocupado) return;
+async function simuladorGerarRelatorio() {
   if (!simuladorEstado.historico.length) {
     simuladorSetStatus('simulador-chat-status', 'bad', 'Ainda não há conversa para avaliar.');
-    return;
+    return false;
   }
+
+  simuladorSetStatus('simulador-chat-status', '', 'Montando o relatório…');
+  const data = await simuladorPostJson('/api/simulacao/feedback', simuladorEstado.historico);
+  simuladorEstado.encerrada = true;
+  simuladorMostrarFeedback(data);
+  return true;
+}
+
+async function simuladorAbrirRelatorioAposEncerramento() {
+  simuladorEstado.encerrada = true;
+  simuladorTravarChat(true);
+  simuladorSetStatus('simulador-chat-status', 'ok', 'A persona encerrou. Montando o relatório…');
+  try {
+    await simuladorGerarRelatorio();
+  } catch (err) {
+    simuladorSetStatus(
+      'simulador-chat-status',
+      'bad',
+      err instanceof Error ? err.message : 'Falha ao gerar o feedback.',
+    );
+  }
+}
+
+async function simuladorEncerrar() {
+  if (simuladorEstado.ocupado) return;
 
   simuladorEstado.ocupado = true;
   simuladorTravarChat(true);
-  simuladorSetStatus('simulador-chat-status', '', 'Montando o relatório…');
 
   try {
-    const data = await simuladorPostJson('/api/simulacao/feedback', simuladorEstado.historico);
-    simuladorEstado.encerrada = true;
-    simuladorMostrarFeedback(data);
+    await simuladorGerarRelatorio();
   } catch (err) {
     simuladorSetStatus(
       'simulador-chat-status',

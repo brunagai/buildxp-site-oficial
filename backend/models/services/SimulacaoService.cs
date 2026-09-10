@@ -29,7 +29,7 @@ public class SimulacaoService
         SimulacaoRequisicaoDto requisicao,
         CancellationToken ct = default)
     {
-        var persona = NormalizarPersona(requisicao?.Persona);
+        var persona = SimulacaoPersonas.Normalizar(requisicao?.Persona);
         var cenario = RecortarLimite((requisicao?.Cenario ?? string.Empty).Trim(), MaxCenario);
         var mensagemUsuario = RecortarLimite((requisicao?.MensagemUsuario ?? string.Empty).Trim(), MaxMensagem);
         var historico = requisicao?.HistoricoMensagens ?? [];
@@ -247,21 +247,6 @@ public class SimulacaoService
 
     private static bool EhUsuario(string remetente) =>
         remetente is "usuario" or "user" or "candidato" or "aluna" or "aluno";
-
-    private static string NormalizarPersona(string? bruto)
-    {
-        var p = (bruto ?? string.Empty).Trim().ToLowerInvariant();
-        p = p.Replace(' ', '_');
-        p = p.Replace("í", "i").Replace("é", "e").Replace("á", "a").Replace("ã", "a").Replace("ó", "o");
-
-        return p switch
-        {
-            "rh_cultura" or "rh" or "cultura" or "recrutador_rh" => "rh_cultura",
-            "tech_lead_gerente" or "tech_lead" or "gerente" or "recrutador_tecnico_rigoroso" or "recrutador_tecnico" or "gestor_dificil" or "gestor" => "tech_lead_gerente",
-            "stakeholder_negocios" or "stakeholder" or "negocios" or "cliente_exigente" or "cliente" => "stakeholder_negocios",
-            _ => string.IsNullOrWhiteSpace(p) ? "rh_cultura" : p,
-        };
-    }
 
     private static SimulacaoRespostaDto? ExtrairRespostaTurno(string? texto)
     {
