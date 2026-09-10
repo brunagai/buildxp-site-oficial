@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using BuildXP.API;
 using BuildXP.API.Services;
 using BuildXP.API.Models;
 using BuildXP.API.Models.Dtos;
@@ -22,12 +23,23 @@ internal static class CardRouteConstants
 public class CardController : ControllerBase
 {
     private readonly CardService _service;
+    private readonly CatalogoEstatico _catalogo;
+    private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
+    private readonly ILogger<CardController> _logger;
 
-    public CardController(CardService service, IWebHostEnvironment env)
+    public CardController(
+        CardService service,
+        CatalogoEstatico catalogo,
+        IConfiguration config,
+        IWebHostEnvironment env,
+        ILogger<CardController> logger)
     {
         _service = service;
+        _catalogo = catalogo;
+        _config = config;
         _env = env;
+        _logger = logger;
     }
 
     /// <summary>Conta admin da plataforma (JWT <c>nameidentifier</c> <c>admin</c>), não colaborador elevado.</summary>
@@ -36,16 +48,36 @@ public class CardController : ControllerBase
 
     // ── ROTAS PÚBLICAS ──────────────────────────────────────
 
+    private bool SemBanco =>
+        BancoNaSubida.UsarCatalogoEstatico(_config.GetConnectionString("DefaultConnection"));
+
     [HttpGet]
     public async Task<IActionResult> Listar()
     {
-        var cards = await _service.ListarAtivosAsync();
-        return Ok(cards.Select(c => CardClientDto.FromEntity(c)).ToList());
+        if (SemBanco)
+            return Ok(_catalogo.Listar());
+
+        try
+        {
+            var cards = await _service.ListarAtivosAsync();
+            return Ok(cards.Select(c => CardClientDto.FromEntity(c)).ToList());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao listar cards no banco. Usando o catálogo estático.");
+            return Ok(_catalogo.Listar());
+        }
     }
 
     [HttpGet("{id:int}")]
     public async Task<IActionResult> BuscarPorId(int id)
     {
+        if (SemBanco)
+        {
+            var estatico = _catalogo.Listar().FirstOrDefault(c => c.Id == id);
+            return estatico is null ? NotFound("Card não encontrado.") : Ok(estatico);
+        }
+
         var card = await _service.BuscarPorIdAsync(id);
         if (card is null) return NotFound("Card não encontrado.");
         return Ok(CardClientDto.FromEntity(card));
@@ -56,9 +88,25 @@ public class CardController : ControllerBase
     {
         if (string.Equals(slug, "dashboard", StringComparison.OrdinalIgnoreCase))
             return NotFound();
-        var card = await _service.BuscarPorSlugAsync(slug);
-        if (card is null) return NotFound("Card não encontrado.");
-        return Ok(CardClientDto.FromEntity(card));
+
+        if (SemBanco)
+        {
+            var estatico = _catalogo.BuscarPorSlug(slug);
+            return estatico is null ? NotFound("Card não encontrado.") : Ok(estatico);
+        }
+
+        try
+        {
+            var card = await _service.BuscarPorSlugAsync(slug);
+            if (card is null) return NotFound("Card não encontrado.");
+            return Ok(CardClientDto.FromEntity(card));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao buscar card {Slug} no banco. Tentando o catálogo estático.", slug);
+            var estatico = _catalogo.BuscarPorSlug(slug);
+            return estatico is null ? NotFound("Card não encontrado.") : Ok(estatico);
+        }
     }
 
     [HttpGet("panel/" + CardRouteConstants.SlugSegment)]

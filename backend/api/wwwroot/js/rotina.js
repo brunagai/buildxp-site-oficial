@@ -184,7 +184,12 @@ async function carregarTemasRotina() {
         titulo: String(c.display_name ?? c.DisplayName ?? c.slug ?? '').trim(),
       }))
       .filter((c) => c.slug && c.titulo);
-    if (daApi.length) rotinaTemas = daApi;
+    if (!daApi.length) return;
+    const vistos = new Set(daApi.map((t) => t.slug));
+    ROTINA_TEMAS_PADRAO.forEach((t) => {
+      if (!vistos.has(t.slug)) daApi.push(t);
+    });
+    rotinaTemas = daApi;
   } catch {
     /* usa a lista padrão */
   }

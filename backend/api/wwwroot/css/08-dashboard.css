@@ -168,6 +168,8 @@
 .dash-card-tile.c-npm { --tile-accent: var(--npm); }
 .dash-card-tile.c-dotnet { --tile-accent: var(--dotnet); }
 .dash-card-tile.c-api { --tile-accent: var(--api); }
+.dash-card-tile.c-python { --tile-accent: var(--python); }
+.dash-card-tile.c-ia { --tile-accent: var(--ia); }
 .dash-card-tile-rarity {
   font-family: var(--f-mono);
   font-size: 0.62rem;

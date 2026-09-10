@@ -265,6 +265,8 @@
 .c-npm    { --cc: var(--npm); }
 .c-dotnet { --cc: var(--dotnet); }
 .c-api    { --cc: var(--api); }
+.c-python { --cc: var(--python); }
+.c-ia     { --cc: var(--ia); }
 
 .card-rarity {
   position:absolute; top:1rem; right:1rem;

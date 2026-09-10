@@ -20,6 +20,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<FeedbackService>();
 builder.Services.AddScoped<CardService>();
+builder.Services.AddSingleton<CatalogoEstatico>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<ColaboradorService>();
 builder.Services.AddScoped<PerfilService>();
@@ -115,7 +116,7 @@ if (!BancoNaSubida.DevePreparar(connectionString))
     if (!BancoNaSubida.TemConnectionString(connectionString))
     {
         app.Logger.LogWarning(
-            "ConnectionStrings:DefaultConnection vazia. Site estático, /health e rotas Groq sobem; cards, dashboard e terminal precisam do banco.");
+            "ConnectionStrings:DefaultConnection vazia. Site estático, /health, Groq e o catálogo público de cards sobem; dashboard e terminal ainda precisam do banco.");
     }
 }
 

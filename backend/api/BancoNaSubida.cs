@@ -16,6 +16,10 @@ internal static class BancoNaSubida
         string.Equals(Environment.GetEnvironmentVariable("BUILDXP_SKIP_DB"), "1", StringComparison.Ordinal) is false
         && TemConnectionString(connectionString);
 
+    /// <summary>GET público de cards usa <see cref="CatalogoEstatico"/> em vez do PostgreSQL.</summary>
+    internal static bool UsarCatalogoEstatico(string? connectionString) =>
+        !DevePreparar(connectionString);
+
     internal static string ParaEf(string? connectionString, bool desenvolvimento)
     {
         if (TemConnectionString(connectionString))

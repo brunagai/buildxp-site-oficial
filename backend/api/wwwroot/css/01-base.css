@@ -25,6 +25,8 @@
   --npm:    #ff4545;
   --dotnet: #b455f5;
   --api:    #22d3ee;
+  --python: #3776ab;
+  --ia:     #3c19e6;
   --yellow: #ffd60a;
 
   --git-glow:    0 0 28px rgba(57,211,83,0.35);
@@ -32,6 +34,8 @@
   --npm-glow:    0 0 28px rgba(255,69,69,0.35);
   --dotnet-glow: 0 0 28px rgba(180,85,245,0.35);
   --api-glow:    0 0 28px rgba(34,211,238,0.35);
+  --python-glow: 0 0 28px rgba(55,118,171,0.35);
+  --ia-glow:     0 0 28px rgba(60,25,230,0.35);
 
   --f-display: 'Orbitron', monospace;
   --f-heading: 'Rajdhani', sans-serif;
@@ -313,4 +317,6 @@ body::before {
 .bg-docker { border-color:var(--docker);color:var(--docker);background:rgba(0,200,255,0.07); }
 .bg-npm    { border-color:var(--npm);   color:var(--npm);   background:rgba(255,69,69,0.07);  }
 .bg-dotnet { border-color:var(--dotnet);color:var(--dotnet);background:rgba(180,85,245,0.07); }
-.bg-python { border-color:var(--python);color:var(--python);background:rgba(194, 208, 71, 0.23); }
+.bg-python { border-color:var(--python);color:var(--python);background:rgba(55,118,171,0.12); }
+.bg-api    { border-color:var(--api);   color:var(--api);   background:rgba(34,211,238,0.07); }
+.bg-ia     { border-color:var(--ia);    color:var(--ia);    background:rgba(60,25,230,0.10); }

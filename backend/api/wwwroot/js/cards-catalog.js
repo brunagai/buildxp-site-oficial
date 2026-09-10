@@ -217,46 +217,75 @@ async function buildxpCatalogFetchCardDetail(base, slug) {
   return res.json();
 }
 
-async function buildxpCatalogLoadPublishedCards() {
-  const base = getBuildXpApiBase();
-  const listRes = await fetch(`${base}/api/card`, {
-    headers: { Accept: 'application/json' },
-    cache: 'no-store',
-    credentials: 'same-origin',
-  });
-  if (!listRes.ok) throw new Error('list');
-  const list = await listRes.json();
-  if (!Array.isArray(list) || !list.length) return [];
-
-  const slugs = list
-    .map((c) => String(c.slug ?? c.Slug ?? '').trim().toLowerCase())
-    .filter(Boolean);
-
+async function buildxpCatalogLoadFromStaticDefs() {
+  const defs = typeof BUILDXP_INDEX_CARD_DEFS !== 'undefined' ? BUILDXP_INDEX_CARD_DEFS : [];
   const loaded = await Promise.all(
-    slugs.map(async (slug) => {
-      const [raw, cheatChunks] = await Promise.all([
-        buildxpCatalogFetchCardDetail(base, slug),
-        buildxpCatalogFetchCheatHtmlChunks(slug),
-      ]);
-      if (!raw) return null;
-
+    defs.map(async (d) => {
+      const slug = String(d.slug ?? '').trim().toLowerCase();
+      if (!slug) return null;
+      const raw = {
+        slug,
+        theme: d.theme || slug,
+        display_name: d.label || slug,
+        is_published: true,
+        sort_order: Number(d.id) || 0,
+      };
       const norm = buildxpNormalizeHomeCardFromDto(raw);
       if (!norm) return null;
-
       const chunks = buildxpCatalogSearchChunks(raw);
+      const cheatChunks = await buildxpCatalogFetchCheatHtmlChunks(slug);
       cheatChunks.forEach((ch) => chunks.push(ch));
-
       return { norm, chunks };
     }),
   );
+  return loaded.filter((x) => x != null);
+}
 
-  return loaded
-    .filter((x) => x != null)
-    .sort(
-      (a, b) =>
-        (a.norm.sort_order - b.norm.sort_order) ||
-        a.norm.slug.localeCompare(b.norm.slug),
+async function buildxpCatalogLoadPublishedCards() {
+  const base = getBuildXpApiBase();
+  try {
+    const listRes = await fetch(`${base}/api/card`, {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+    if (!listRes.ok) throw new Error('list');
+    const list = await listRes.json();
+    if (!Array.isArray(list) || !list.length) return buildxpCatalogLoadFromStaticDefs();
+
+    const slugs = list
+      .map((c) => String(c.slug ?? c.Slug ?? '').trim().toLowerCase())
+      .filter(Boolean);
+
+    const loaded = await Promise.all(
+      slugs.map(async (slug) => {
+        const [raw, cheatChunks] = await Promise.all([
+          buildxpCatalogFetchCardDetail(base, slug),
+          buildxpCatalogFetchCheatHtmlChunks(slug),
+        ]);
+        if (!raw) return null;
+
+        const norm = buildxpNormalizeHomeCardFromDto(raw);
+        if (!norm) return null;
+
+        const chunks = buildxpCatalogSearchChunks(raw);
+        cheatChunks.forEach((ch) => chunks.push(ch));
+
+        return { norm, chunks };
+      }),
     );
+
+    const ok = loaded
+      .filter((x) => x != null)
+      .sort(
+        (a, b) =>
+          (a.norm.sort_order - b.norm.sort_order) ||
+          a.norm.slug.localeCompare(b.norm.slug),
+      );
+    return ok.length ? ok : buildxpCatalogLoadFromStaticDefs();
+  } catch (_) {
+    return buildxpCatalogLoadFromStaticDefs();
+  }
 }
 
 function buildxpCatalogSetStatus(statusEl, query, visible, total) {

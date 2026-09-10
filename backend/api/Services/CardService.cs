@@ -16,98 +16,6 @@ public class CardService
         _context = context;
     }
 
-    private static string CorParaTema(string? theme)
-    {
-        if (string.IsNullOrWhiteSpace(theme)) return "#39d353";
-        return theme.Trim().ToLowerInvariant() switch
-        {
-            "git" => "#39d353",
-            "docker" => "#2496ed",
-            "npm" => "#cb3837",
-            "dotnet" => "#512bd4",
-            "api" => "#22d3ee",
-            "python" => "#3776ab",
-            "ia" => "#3c19e6",
-            _ => "#39d353",
-        };
-    }
-
-    /// <summary>Normaliza #rgb ou #rrggbb para #rrggbb minúsculo (limite BD: 7 caracteres).</summary>
-    private static bool TryNormalizeHexColor(string? input, out string normalized)
-    {
-        normalized = string.Empty;
-        if (string.IsNullOrWhiteSpace(input)) return false;
-        var s = input.Trim();
-        if (s.StartsWith("#", StringComparison.Ordinal))
-            s = s[1..];
-        if (s.Length == 3 && Regex.IsMatch(s, "^[0-9a-fA-F]{3}$"))
-        {
-            normalized = $"#{s[0]}{s[0]}{s[1]}{s[1]}{s[2]}{s[2]}".ToLowerInvariant();
-            return true;
-        }
-
-        if (s.Length == 6 && Regex.IsMatch(s, "^[0-9a-fA-F]{6}$"))
-        {
-            normalized = "#" + s.ToLowerInvariant();
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// PostgreSQL / EF aplicam HasMaxLength — URLs longas ou data URLs de ícone quebravam SaveChanges (500).
-    /// Data URL em ícone: não cabe em 512 chars → fallback para logo curto (gravar PNG em wwwroot/imagens/).
-    /// </summary>
-    private static void AplicarLimitesColunasSkillCard(SkillCard card)
-    {
-        static string Clamp(string? s, int maxLen)
-        {
-            if (string.IsNullOrEmpty(s)) return string.Empty;
-            var t = s.Trim();
-            return t.Length <= maxLen ? t : t[..maxLen];
-        }
-
-        static string IconSrcParaBd(string? s)
-        {
-            const int max = 512;
-            const string fallback = "imagens/logo2buildxpret.png";
-            if (string.IsNullOrWhiteSpace(s)) return string.Empty;
-            var t = s.Trim();
-            if (t.StartsWith(CardIconHelper.TempPrefix, StringComparison.OrdinalIgnoreCase) ||
-                t.Equals(CardIconHelper.DbPrimaryMarker, StringComparison.OrdinalIgnoreCase) ||
-                t.Equals(CardIconHelper.DbSecondaryMarker, StringComparison.OrdinalIgnoreCase))
-                return t;
-            if (t.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && t.Length > max)
-                return fallback;
-            var mapped = CardIconHelper.MapDuplicateToOriginalPath(t);
-            if (mapped is not null) return mapped;
-            return t.Length <= max ? t : t[..max];
-        }
-
-        const int maxLen = 512;
-
-        card.Slug = Clamp(card.Slug, 48);
-        card.Theme = string.IsNullOrWhiteSpace(card.Theme) ? "git" : Clamp(card.Theme, 32);
-        card.Titulo = Clamp(card.Titulo, 120);
-        card.Raridade = Clamp(card.Raridade, 32);
-        card.Classe = Clamp(card.Classe, 60);
-        var cb = Clamp(card.CorBorda, 7);
-        card.CorBorda = cb.Length == 7 && cb.StartsWith("#", StringComparison.Ordinal) ? cb : "#39d353";
-        card.LinkBeginner = Clamp(card.LinkBeginner, maxLen);
-        card.LinkRef = Clamp(card.LinkRef, maxLen);
-        card.BtnPrimaryLabel = Clamp(card.BtnPrimaryLabel, 80);
-        card.BtnSecondaryLabel = Clamp(card.BtnSecondaryLabel, 80);
-        card.IconLayout = string.IsNullOrWhiteSpace(card.IconLayout) ? "single" : Clamp(card.IconLayout, 16);
-        card.IconPrimarySrc = IconSrcParaBd(card.IconPrimarySrc);
-        card.IconSecondarySrc = IconSrcParaBd(card.IconSecondarySrc);
-        card.IconPrimaryAlt = Clamp(card.IconPrimaryAlt, 200);
-        card.IconSecondaryAlt = Clamp(card.IconSecondaryAlt, 200);
-        card.Icone = !string.IsNullOrEmpty(card.IconPrimarySrc)
-            ? card.IconPrimarySrc
-            : Clamp(card.Icone, maxLen);
-    }
-
     public void AplicarPayload(SkillCard card, CardDashboardPayload p)
     {
         var theme = string.IsNullOrWhiteSpace(p.Theme) ? "git" : p.Theme!.Trim();
@@ -138,10 +46,10 @@ public class CardService
         if (p.XpMax is int xpm) card.XpMaximo = xpm;
         if (p.SortOrder is int so) card.Ordem = so;
         if (p.IsPublished is bool pub) card.Ativo = pub;
-        if (TryNormalizeHexColor(p.BorderColor, out var hex))
+        if (CardCampos.TryNormalizeHexColor(p.BorderColor, out var hex))
             card.CorBorda = hex;
         else
-            card.CorBorda = CorParaTema(theme);
+            card.CorBorda = CardCampos.CorParaTema(theme);
 
         // Página pública única (card.html); links vazios ou legado *.html → card.html?slug=…&tab=…
         if (!string.IsNullOrWhiteSpace(card.Slug))
@@ -169,7 +77,7 @@ public class CardService
         card.Icone = !string.IsNullOrEmpty(card.IconPrimarySrc)
             ? card.IconPrimarySrc
             : card.Icone;
-        AplicarLimitesColunasSkillCard(card);
+        CardCampos.AplicarLimitesColunasSkillCard(card);
     }
 
     private async Task ApplyOneIconRefAsync(SkillCard card, string? refValue, bool primary)
@@ -535,47 +443,12 @@ public class CardService
         return ms.ToArray();
     }
 
-    /// <summary>Fallback: grava em <c>wwwroot/imagens/</c> (nome original sanitizado).</summary>
     public static Task<string> SaveIconBytesToWwwrootAsync(
         byte[] data,
         string originalFileName,
         string webRootPath,
-        CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(webRootPath))
-            throw new InvalidOperationException("WebRoot não configurado.");
-        if (data is not { Length: > 0 })
-            throw new InvalidOperationException("Ficheiro vazio.");
-
-        var ext = Path.GetExtension(originalFileName).ToLowerInvariant();
-        var baseName = Path.GetFileNameWithoutExtension(originalFileName);
-        baseName = Regex.Replace(baseName ?? "", @"[^a-zA-Z0-9_-]", "_");
-        if (string.IsNullOrWhiteSpace(baseName)) baseName = "icon";
-        if (baseName.Length > 48) baseName = baseName[..48];
-
-        var fileName = $"{baseName}{ext}".ToLowerInvariant();
-        var imagensDir = Path.Combine(webRootPath, "imagens");
-        Directory.CreateDirectory(imagensDir);
-        var physical = Path.Combine(imagensDir, fileName);
-        return WriteIconBytesAsync(data, physical, ct);
-    }
-
-    private static async Task<string> WriteIconBytesAsync(byte[] data, string physicalPath, CancellationToken ct)
-    {
-        await using (var stream = new FileStream(
-                         physicalPath,
-                         FileMode.Create,
-                         FileAccess.Write,
-                         FileShare.None,
-                         bufferSize: 65536,
-                         options: FileOptions.Asynchronous))
-        {
-            await stream.WriteAsync(data, ct);
-        }
-
-        var fileName = Path.GetFileName(physicalPath);
-        return $"imagens/{fileName}".Replace('\\', '/');
-    }
+        CancellationToken ct = default) =>
+        CardIconArquivo.SalvarEmWwwrootAsync(data, originalFileName, webRootPath, ct);
 
     // desativa card — soft delete
     public async Task<bool> DesativarAsync(int id)

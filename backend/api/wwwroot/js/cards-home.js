@@ -213,6 +213,9 @@ const BUILDXP_INDEX_CARD_DEFS = [
   { id: 2, slug: 'docker', theme: 'docker', label: 'Docker', page: 'docker.html' },
   { id: 3, slug: 'npm', theme: 'npm', label: 'NPM', page: 'npm.html' },
   { id: 4, slug: 'dotnet', theme: 'dotnet', label: '.NET / dotnet', page: 'dotnet.html' },
+  { id: 5, slug: 'python', theme: 'python', label: 'Python', page: 'python.html' },
+  { id: 6, slug: 'api', theme: 'api', label: 'APIs', page: 'api.html' },
+  { id: 7, slug: 'ia', theme: 'ia', label: 'IA', page: 'ia.html' },
 ];
 const BUILDXP_INDEX_SLUGS = BUILDXP_INDEX_CARD_DEFS.map((c) => c.slug);
 /** Hex por tema preset — mesmo mapa que CardService.CorParaTema no backend. */
